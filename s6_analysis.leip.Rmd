@@ -1,0 +1,802 @@
+# Project: Election Admin
+# Author: Darren Jian
+# Sequence: 6
+# Description: Multilevel model estimation (EAC, Leip, CPS) for residual registration rate
+# Input: election_admin.csv, election_admin_leip.csv, election_admin_adj.csv (download from Dropbox)
+# Output: admin_vot.csv, admin_vot.leip.csv, admin_vot.adj,csv
+
+```{r setup, include=FALSE}
+rm(list=ls())
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(lme4)
+library(stargazer)
+
+```
+
+
+## Read and ready data
+
+```{r}
+admin <- read.csv("out/election_admin.csv", header = TRUE, na.strings = "",
+                  colClasses = c(rep("character", 5), rep("numeric", 85)))
+admin$fips<-as.integer(admin$fips)
+
+admin.leip <- read.csv("out/election_admin_leip.csv")
+admin.adj <- read.csv("out/election_admin_adj.csv")
+
+admin.leip<-admin.leip[,-1]
+admin.adj<-admin.adj[,-1]
+```
+
+
+```{r}
+#move content from old data set(admin) to new dataset (admin_leip)
+
+#first mover: state
+ad=admin[,c('fips','state')]
+ad=unique(ad)
+x=merge(admin.leip,ad,by=c("fips"),all.X=T)
+colnames(x)[which(colnames(x)=="state.y")]<-"state"
+x<-x[,-which(colnames(x)=="state.x")]
+
+#second mover: adult_pop
+x=merge(x,admin[,c('year','fips','adult_pop')],by=c("fips","year"),all.X=T)
+x<-x[,-which(colnames(x)=="adult_pop.x")]
+colnames(x)[which(colnames(x)=="adult_pop.y")]<-"adult_pop"
+
+#second mover: adult_pop
+x=merge(x,admin[,c('year','fips','adult_pop')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="adult_pop.y")]<-"adult_pop"
+
+# 3: citizen_pop
+x=merge(x,admin[,c('year','fips','citizen_pop')],by=c("fips","year"),all.X=T)
+x<-x[,-which(colnames(x)=="citizen_pop.x")]
+colnames(x)[which(colnames(x)=="citizen_pop.y")]<-"citizen_pop"
+
+# 4: voting_pop
+x=merge(x,admin[,c('year','fips','voting_pop')],by=c("fips","year"),all.X=T)
+x<-x[,-which(colnames(x)=="voting_pop.x")]
+colnames(x)[which(colnames(x)=="voting_pop.y")]<-"voting_pop"
+
+# 5: population
+x=merge(x,admin[,c('year','fips','population')],by=c("fips","year"),all.X=T)
+x<-x[,-which(colnames(x)=="population.x")]
+colnames(x)[which(colnames(x)=="population.y")]<-"population"
+
+# 6: percent_female
+x=merge(x,admin[,c('year','fips','female_pop')],by=c("fips","year"),all.X=T)
+#x<-x[,-which(colnames(x)=="female_pop.x")]
+colnames(x)[which(colnames(x)=="female_pop.y")]<-"female_pop"
+
+x=merge(x,admin[,c('year','fips',  'male_pop')],by=c("fips","year"),all.X=T)
+
+#x<-x[,-which(colnames(x)=="male_pop.x")]
+colnames(x)[which(colnames(x)=="male_pop.y")]<-"male_pop"
+
+x=merge(x,admin[,c('year','fips','median_income')],by=c("fips","year"),all.X=T)
+#x<-x[,-which(colnames(x)=="median_income.x")]
+colnames(x)[which(colnames(x)=="median_income.y")]<-"median_income"
+
+x=merge(x,admin[,c('year','fips','pct_white')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="pct_white.y")]<-"pct_white"
+
+x=merge(x,admin[,c('year','fips','purged')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="purged.y")]<-"purged"
+#total_voters
+colnames(x)[which(colnames(x)=="total_reg")]<-"total_voters"
+
+x=merge(x,admin[,c('year','fips','reg_grace')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="reg_grace.y")]<-"reg_grace"
+# felony_strict + felony_moderate
+
+x=merge(x,admin[,c('year','fips','felony_strict')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="felony_strict.y")]<-"felony_strict"
+
+x=merge(x,admin[,c('year','fips','felony_moderate')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="felony_moderate.y")]<-"felony_moderate"
+
+#days_reg_inperson
+x=merge(x,admin[,c('year','fips','days_reg_inperson')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="days_reg_inperson.y")]<-"days_reg_inperson"
+
+#prov_submit
+x=merge(x,admin[,c('year','fips','prov_submit')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="prov_submit.y")]<-"prov_submit"
+
+#prov_rej abs_rej dca_rej 
+x=merge(x,admin[,c('year','fips','prov_rej')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="prov_rej.y")]<-"prov_rej"
+
+x=merge(x,admin[,c('year','fips','abs_rej')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="abs_rej.y")]<-"abs_rej"
+
+x=merge(x,admin[,c('year','fips','dca_rej')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="dca_rej.y")]<-"dca_rej"
+#eday_office
+
+x=merge(x,admin[,c('year','fips','eday_office')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="eday_office.y")]<-"eday_office"
+
+x=merge(x,admin[,c('year','fips','eday_polls')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="eday_polls.y")]<-"eday_polls"
+         #, website # info_standard, info_other, info_ssn, info_address, 
+x=merge(x,admin[,c('year','fips','eday_polls')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="eday_polls.y")]<-"eday_polls"
+         #, all_mail
+x=merge(x,admin[,c('year','fips','all_mail')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="all_mail.y")]<-"all_mail"
+         #, early_inperson
+x=merge(x,admin[,c('year','fips','early_inperson')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="early_inperson.y")]<-"early_inperson"
+         #, join_abs_list
+x=merge(x,admin[,c('year','fips','join_abs_list')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="join_abs_list.y")]<-"join_abs_list"
+         #, strict_id
+x=merge(x,admin[,c('year','fips','strict_id')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="strict_id.y")]<-"strict_id"
+         #, photo_id
+x=merge(x,admin[,c('year','fips','photo_id')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="photo_id.y")]<-"photo_id"
+         #, counts_pb
+x=merge(x,admin[,c('year','fips','counts_pb')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="counts_pb.y")]<-"counts_pb"
+         #, hava_spend
+x=merge(x,admin[,c('year','fips','hava_spend')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="hava_spend.y")]<-"hava_spend"
+         #, cost_100_less
+x=merge(x,admin[,c('year','fips','cost_100_less')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="cost_100_less.y")]<-"cost_100_less"
+         #, rep_control 
+x=merge(x,admin[,c('year','fips','rep_control')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="rep_control.y")]<-"rep_control"
+         #, dem_control
+x=merge(x,admin[,c('year','fips','dem_control')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="dem_control.y")]<-"dem_control"
+
+x=merge(x,admin[,c('year','fips','vote_margin')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="vote_margin.y")]<-"vote_margin"
+
+x=merge(x,admin[,c('year','fips','website')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="website.y")]<-"website"
+
+x=merge(x,admin[,c('year','fips','statefp')],by=c("fips","year"),all.X=T)
+colnames(x)[which(colnames(x)=="statefp.y")]<-"statefp"
+#          #, eday_polls
+# x=merge(x,admin[,c('year','fips','eday_polls')],by=c("fips","year"),all.X=T)
+# colnames(x)[which(colnames(x)=="eday_polls.y")]<-"eday_polls"
+
+
+
+admin.leip=x
+#sum(complete.cases(admin))
+
+#ccs stands for complete cases
+#ccs<-sapply(1:90,function(j){sum(complete.cases(admin[,j]))})
+#which.min(ccs)
+
+#missingest first
+#colnames(admin)[order(ccs)]
+```
+
+
+```{r}
+#move content from old data set(admin) to new dataset (admin_adj)
+#first mover: state
+ad2=admin[,c('fips','state')]
+ad2=unique(ad2)
+x2=merge(admin.adj,ad2,by=c("fips"),all.X=T)
+colnames(x2)[which(colnames(x2)=="state.y")]<-"state"
+x2<-x2[,-which(colnames(x2)=="state.x")]
+
+#second mover: adult_pop
+x2=merge(x2,admin[,c('year','fips','adult_pop')],by=c("fips","year"),all.X=T)
+x2<-x2[,-which(colnames(x2)=="adult_pop.x")]
+colnames(x2)[which(colnames(x2)=="adult_pop.y")]<-"adult_pop"
+
+#second mover: adult_pop
+x2=merge(x2,admin[,c('year','fips','adult_pop')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="adult_pop.y")]<-"adult_pop"
+
+# 3: citizen_pop
+x2=merge(x2,admin[,c('year','fips','citizen_pop')],by=c("fips","year"),all.X=T)
+x2<-x2[,-which(colnames(x2)=="citizen_pop.x")]
+colnames(x2)[which(colnames(x2)=="citizen_pop.y")]<-"citizen_pop"
+
+# 4: voting_pop
+x2=merge(x2,admin[,c('year','fips','voting_pop')],by=c("fips","year"),all.X=T)
+x2<-x2[,-which(colnames(x2)=="voting_pop.x")]
+colnames(x2)[which(colnames(x2)=="voting_pop.y")]<-"voting_pop"
+
+# 5: population
+x2=merge(x2,admin[,c('year','fips','population')],by=c("fips","year"),all.X=T)
+x2<-x2[,-which(colnames(x2)=="population.x")]
+colnames(x2)[which(colnames(x2)=="population.y")]<-"population"
+
+# 6: percent_female
+x2=merge(x2,admin[,c('year','fips','female_pop')],by=c("fips","year"),all.X=T)
+#x<-x[,-which(colnames(x)=="female_pop.x")]
+colnames(x2)[which(colnames(x2)=="female_pop.y")]<-"female_pop"
+
+x2=merge(x2,admin[,c('year','fips',  'male_pop')],by=c("fips","year"),all.X=T)
+
+#x<-x[,-which(colnames(x)=="male_pop.x")]
+colnames(x2)[which(colnames(x2)=="male_pop.y")]<-"male_pop"
+
+x2=merge(x2,admin[,c('year','fips','median_income')],by=c("fips","year"),all.X=T)
+#x<-x[,-which(colnames(x)=="median_income.x")]
+colnames(x2)[which(colnames(x2)=="median_income.y")]<-"median_income"
+
+x2=merge(x2,admin[,c('year','fips','pct_white')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="pct_white.y")]<-"pct_white"
+
+x2=merge(x2,admin[,c('year','fips','purged')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="purged.y")]<-"purged"
+#total_voters
+colnames(x2)[which(colnames(x2)=="total_reg")]<-"total_voters"
+
+x2=merge(x2,admin[,c('year','fips','reg_grace')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="reg_grace.y")]<-"reg_grace"
+# felony_strict + felony_moderate
+
+x2=merge(x2,admin[,c('year','fips','felony_strict')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="felony_strict.y")]<-"felony_strict"
+
+x2=merge(x2,admin[,c('year','fips','felony_moderate')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="felony_moderate.y")]<-"felony_moderate"
+
+#days_reg_inperson
+x2=merge(x2,admin[,c('year','fips','days_reg_inperson')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="days_reg_inperson.y")]<-"days_reg_inperson"
+
+#prov_submit
+x2=merge(x2,admin[,c('year','fips','prov_submit')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="prov_submit.y")]<-"prov_submit"
+
+#prov_rej abs_rej dca_rej 
+x2=merge(x2,admin[,c('year','fips','prov_rej')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="prov_rej.y")]<-"prov_rej"
+
+x2=merge(x2,admin[,c('year','fips','abs_rej')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="abs_rej.y")]<-"abs_rej"
+
+x2=merge(x2,admin[,c('year','fips','dca_rej')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="dca_rej.y")]<-"dca_rej"
+#eday_office
+
+x2=merge(x2,admin[,c('year','fips','eday_office')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="eday_office.y")]<-"eday_office"
+
+x2=merge(x2,admin[,c('year','fips','eday_polls')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="eday_polls.y")]<-"eday_polls"
+         #, website # info_standard, info_other, info_ssn, info_address, 
+x2=merge(x2,admin[,c('year','fips','eday_polls')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="eday_polls.y")]<-"eday_polls"
+         #, all_mail
+x2=merge(x2,admin[,c('year','fips','all_mail')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="all_mail.y")]<-"all_mail"
+         #, early_inperson
+x2=merge(x2,admin[,c('year','fips','early_inperson')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="early_inperson.y")]<-"early_inperson"
+         #, join_abs_list
+x2=merge(x2,admin[,c('year','fips','join_abs_list')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="join_abs_list.y")]<-"join_abs_list"
+         #, strict_id
+x2=merge(x2,admin[,c('year','fips','strict_id')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="strict_id.y")]<-"strict_id"
+         #, photo_id
+x2=merge(x2,admin[,c('year','fips','photo_id')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="photo_id.y")]<-"photo_id"
+         #, counts_pb
+x2=merge(x2,admin[,c('year','fips','counts_pb')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="counts_pb.y")]<-"counts_pb"
+         #, hava_spend
+x2=merge(x2,admin[,c('year','fips','hava_spend')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="hava_spend.y")]<-"hava_spend"
+         #, cost_100_less
+x2=merge(x2,admin[,c('year','fips','cost_100_less')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="cost_100_less.y")]<-"cost_100_less"
+         #, rep_control 
+x2=merge(x2,admin[,c('year','fips','rep_control')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="rep_control.y")]<-"rep_control"
+         #, dem_control
+x2=merge(x2,admin[,c('year','fips','dem_control')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="dem_control.y")]<-"dem_control"
+
+x2=merge(x2,admin[,c('year','fips','vote_margin')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="vote_margin.y")]<-"vote_margin"
+
+x2=merge(x2,admin[,c('year','fips','website')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="website.y")]<-"website"
+
+x2=merge(x2,admin[,c('year','fips','statefp')],by=c("fips","year"),all.X=T)
+colnames(x2)[which(colnames(x2)=="statefp.y")]<-"statefp"
+#          #, eday_polls
+# x=merge(x,admin[,c('year','fips','eday_polls')],by=c("fips","year"),all.X=T)
+# colnames(x)[which(colnames(x)=="eday_polls.y")]<-"eday_polls"
+
+
+
+admin.adj=x2
+#sum(complete.cases(admin))
+
+#ccs stands for complete cases
+#ccs<-sapply(1:90,function(j){sum(complete.cases(admin[,j]))})
+#which.min(ccs)
+
+#missingest first
+#colnames(admin)[order(ccs)]
+```
+
+
+## create population (2016 only) data frame
+
+```{r}
+population <- admin %>% 
+  filter(year == "2016") %>% 
+  select(fips, countyname, state, adult_pop, citizen_pop, population,
+         voting_pop) %>% # keep these variables
+  mutate(pct_citizen = citizen_pop/population,
+         pct_adult = adult_pop/population,
+         voting_pop_est = citizen_pop*pct_adult,
+         voting_pop_error = abs(voting_pop - voting_pop_est)/voting_pop
+         ) #add these variables
+
+population.leip <- admin.leip %>% 
+  filter(year == "2016") %>% 
+  select(fips, countyname, state, adult_pop, citizen_pop, population,
+         voting_pop) %>% # keep these variables
+  mutate(pct_citizen = citizen_pop/population,
+         pct_adult = adult_pop/population,
+         voting_pop_est = citizen_pop*pct_adult,
+         voting_pop_error = abs(voting_pop - voting_pop_est)/voting_pop
+         ) #add these variables
+
+population.adj <- admin.adj %>% 
+  filter(year == "2016") %>% 
+  select(fips, countyname, state, adult_pop, citizen_pop, population,
+         voting_pop) %>% # keep these variables
+  mutate(pct_citizen = citizen_pop/population,
+         pct_adult = adult_pop/population,
+         voting_pop_est = citizen_pop*pct_adult,
+         voting_pop_error = abs(voting_pop - voting_pop_est)/voting_pop
+         ) #add these variables
+```
+
+
+```{r}
+# use 2016 voting population as pct of adult population to impute prior years
+
+voting_pop_factor <- population %>% 
+  select(fips, adult_pop, voting_pop) %>% 
+  transmute(fips = fips, voting_pop_factor = voting_pop/adult_pop)
+
+voting_pop_factor.leip <- population.leip %>% 
+  select(fips, adult_pop, voting_pop) %>% 
+  transmute(fips = fips, voting_pop_factor = voting_pop/adult_pop)
+
+voting_pop_factor.adj <- population.adj %>% 
+  select(fips, adult_pop, voting_pop) %>% 
+  transmute(fips = fips, voting_pop_factor = voting_pop/adult_pop)
+```
+
+## now missingness for all years
+
+Since year is a variable and we are grouping by year, the missingness is only on 89 variables
+
+```{r}
+# assess missingness
+#missing <- admin %>% 
+#  group_by(year) %>% 
+#  mutate_all(is.na) %>% 
+#  mutate_if(is.logical, as.integer) %>% 
+#  summarise_all(sum) %>% 
+#  gather(variable, missing, -year) %>% 
+#  spread(year, missing) %>% 
+#  group_by(variable) 
+```
+
+Entire data set (all years)
+
+```{r}
+# computer variables
+admin_vot <- admin %>% 
+  left_join(voting_pop_factor, by = "fips") %>%
+  mutate(pct_female = female_pop/(female_pop + male_pop),
+         ln_median_income = log(median_income),
+         ln_population = log(population),
+         pct_nonwhite = 1 - pct_white,
+         voting_pop_est = ifelse(year == "2016", voting_pop,
+                                 as.integer(adult_pop*voting_pop_factor)),
+         pct_purged = ifelse(is.na(purged), 0, purged/voting_pop_est),
+         resid_reg = ifelse(voting_pop_est > total_voters,
+                            voting_pop_est - total_voters, 0),
+         resid_reg_rate = (resid_reg/adult_pop),
+         no_grace = 1 - reg_grace,
+         felony_str_mod = felony_strict + felony_moderate,
+         same_day_reg = ifelse(days_reg_inperson == 0, 1, 0),
+         resid_out_rate = ifelse(turnout > total_voters|total_voters == 0,
+                                 0, (total_voters - turnout)/total_voters),
+         resid_bal_rate = ifelse(is.na(prov_submit)|turnout == 0,
+                                 0, prov_submit/turnout),
+         prov_rej = ifelse(is.na(prov_rej), 0, prov_rej),
+         abs_rej = ifelse(is.na(abs_rej), 0, abs_rej),
+         dca_rej = ifelse(is.na(dca_rej), 0, dca_rej),
+         rej_ballots = prov_rej,
+         resid_vot_rate = ifelse(turnout <= rej_ballots, 0,
+                                 rej_ballots/turnout),
+         eday_office = ifelse(is.na(eday_office), 0, eday_office),
+         poll_count = eday_polls + eday_office,
+         x_resid_reg_rate = resid_reg_rate,
+         x_resid_out_rate = resid_out_rate,
+         x_resid_bal_rate = resid_bal_rate,
+         poll_density = total_voters/poll_count,
+         high_density = ifelse(poll_density > 1000, 1, 0),
+         high_density = ifelse(is.na(high_density), 0, high_density)) %>%
+         mutate(reg_rate = 1 - resid_reg_rate, x_reg_rate = 1 - x_resid_reg_rate,
+                out_rate = 1 - resid_out_rate, x_out_rate = 1 - x_resid_out_rate,
+                bal_rate = 1 - resid_bal_rate, x_bal_rate = 1 - x_resid_bal_rate,
+                vot_rate = 1 - resid_vot_rate)
+
+admin_vot.leip <- admin.leip %>% 
+  left_join(voting_pop_factor.leip, by = "fips") %>%
+  mutate(pct_female = female_pop/(female_pop + male_pop),
+         ln_median_income = log(median_income),
+         ln_population = log(population),
+         pct_nonwhite = 1 - pct_white,
+         voting_pop_est = ifelse(year == "2016", voting_pop,
+                                 as.integer(adult_pop*voting_pop_factor)),
+         pct_purged = ifelse(is.na(purged), 0, purged/voting_pop_est),
+         resid_reg = ifelse(voting_pop_est > total_voters, 
+                            voting_pop_est - total_voters, 0),
+         resid_reg_rate = (resid_reg/adult_pop),  
+         no_grace = 1 - reg_grace,
+         felony_str_mod = felony_strict + felony_moderate, 
+         same_day_reg = ifelse(days_reg_inperson == 0, 1, 0),  
+         resid_out_rate = ifelse(turnout > total_voters|total_voters == 0, ######### turnout from leip
+                                 0, (total_voters - turnout)/total_voters),
+         resid_bal_rate = ifelse(is.na(prov_submit)|turnout == 0,
+                                 0, prov_submit/turnout),
+         prov_rej = ifelse(is.na(prov_rej), 0, prov_rej), ######### prov_rej abs_rej dca_rej
+         abs_rej = ifelse(is.na(abs_rej), 0, abs_rej),
+         dca_rej = ifelse(is.na(dca_rej), 0, dca_rej),
+         rej_ballots = prov_rej,
+         resid_vot_rate = ifelse(turnout <= rej_ballots, 0,
+                                 rej_ballots/turnout), 
+         eday_office = ifelse(is.na(eday_office), 0, eday_office),
+         poll_count = eday_polls + eday_office, #########
+         x_resid_reg_rate = resid_reg_rate,
+         x_resid_out_rate = resid_out_rate,
+         x_resid_bal_rate = resid_bal_rate,
+         poll_density = total_voters/poll_count,
+         high_density = ifelse(poll_density > 1000, 1, 0),
+         high_density = ifelse(is.na(high_density), 0, high_density)) %>%
+         mutate(reg_rate = 1 - resid_reg_rate, x_reg_rate = 1 - x_resid_reg_rate,
+                out_rate = 1 - resid_out_rate, x_out_rate = 1 - x_resid_out_rate,
+                bal_rate = 1 - resid_bal_rate, x_bal_rate = 1 - x_resid_bal_rate,
+                vot_rate = 1 - resid_vot_rate)
+
+admin.adj$total_voters <- as.numeric(admin.adj$total_voters)
+admin_vot.adj <- admin.adj %>% 
+  left_join(voting_pop_factor.adj, by = "fips") %>%
+  mutate(pct_female = female_pop/(female_pop + male_pop),
+         ln_median_income = log(median_income),
+         ln_population = log(population),
+         pct_nonwhite = 1 - pct_white,
+         voting_pop_est = ifelse(year == "2016", voting_pop,
+                                 as.integer(adult_pop*voting_pop_factor)),
+         pct_purged = ifelse(is.na(purged), 0, purged/voting_pop_est),
+         resid_reg = ifelse(voting_pop_est > total_voters, 
+                            voting_pop_est - total_voters, 0),
+         resid_reg_rate = (resid_reg/adult_pop),  
+         no_grace = 1 - reg_grace,
+         felony_str_mod = felony_strict + felony_moderate, 
+         same_day_reg = ifelse(days_reg_inperson == 0, 1, 0),  
+         resid_out_rate = ifelse(turnout > total_voters|total_voters == 0, ######### turnout from leip
+                                 0, (total_voters - turnout)/total_voters),
+         resid_bal_rate = ifelse(is.na(prov_submit)|turnout == 0,
+                                 0, prov_submit/turnout),
+         prov_rej = ifelse(is.na(prov_rej), 0, prov_rej), ######### prov_rej abs_rej dca_rej
+         abs_rej = ifelse(is.na(abs_rej), 0, abs_rej),
+         dca_rej = ifelse(is.na(dca_rej), 0, dca_rej),
+         rej_ballots = prov_rej,
+         resid_vot_rate = ifelse(turnout <= rej_ballots, 0,
+                                 rej_ballots/turnout), 
+         eday_office = ifelse(is.na(eday_office), 0, eday_office),
+         poll_count = eday_polls + eday_office, #########
+         x_resid_reg_rate = resid_reg_rate,
+         x_resid_out_rate = resid_out_rate,
+         x_resid_bal_rate = resid_bal_rate,
+         poll_density = total_voters/poll_count,
+         high_density = ifelse(poll_density > 1000, 1, 0),
+         high_density = ifelse(is.na(high_density), 0, high_density)) %>%
+         mutate(reg_rate = 1 - resid_reg_rate, x_reg_rate = 1 - x_resid_reg_rate,
+                out_rate = 1 - resid_out_rate, x_out_rate = 1 - x_resid_out_rate,
+                bal_rate = 1 - resid_bal_rate, x_bal_rate = 1 - x_resid_bal_rate,
+                vot_rate = 1 - resid_vot_rate)
+  
+```
+
+## write results
+
+```{r}
+write_csv(admin_vot, path = 'out/admin_vot.csv', na = '')
+write_csv(admin_vot.leip, path = 'out/admin_vot.leip.csv', na = '')
+write_csv(admin_vot.adj, path = 'out/admin_vot.adj.csv', na = '')
+```
+
+## scales admin_vot columns of interest
+
+```{r}
+# continuous variables scaled and centered for multilevel model
+data_scaled <- admin_vot %>% 
+  select(year, fips, countyname, statefp, state, felony_str_mod, same_day_reg,
+         pct_purged,  website, # info_standard, info_other, info_ssn, info_address, 
+         all_mail, early_inperson, join_abs_list, strict_id, photo_id,  
+         counts_pb, high_density, hava_spend, cost_100_less, rep_control, 
+         dem_control, pct_highschool, pct_unemployed, ln_median_income, 
+         median_age, pct_female, pct_black, pct_latino, vote_margin, 
+         x_reg_rate, x_out_rate, x_bal_rate, reg_rate, 
+         out_rate, bal_rate, vot_rate) %>% 
+  mutate_at(c("pct_purged", "hava_spend", "pct_highschool", "pct_unemployed",
+              "ln_median_income", "pct_female", "median_age", "pct_black",
+              "pct_latino", "vote_margin", "x_reg_rate", 
+              "x_out_rate", "x_bal_rate"), scale)
+
+data_scaled.leip <- admin_vot.leip %>% 
+  select(year, fips, countyname
+         , statefp
+         , state, felony_str_mod, same_day_reg
+         , pct_purged
+          , high_density
+         , website # info_standard, info_other, info_ssn, info_address,
+         , all_mail
+         , early_inperson
+         , join_abs_list
+         , strict_id
+         , photo_id
+         , counts_pb
+         , hava_spend
+         , cost_100_less
+         , rep_control
+         , dem_control
+         , pct_highschool
+         , pct_unemployed
+         , ln_median_income
+         , median_age
+         , pct_female
+         , pct_black
+         , pct_latino
+         , vote_margin 
+         , x_reg_rate
+         , x_out_rate
+         , x_bal_rate
+         , reg_rate
+         , out_rate
+         , bal_rate
+         , vot_rate) %>%
+  mutate_at(c("pct_purged"
+              , "hava_spend"
+              , "pct_highschool"
+              , "pct_unemployed"
+              , "ln_median_income"
+              , "pct_female"
+              , "median_age"
+              , "pct_black"
+              , "pct_latino"
+              , "vote_margin"
+              , "x_reg_rate"
+              , "x_out_rate"
+              , "x_bal_rate"), scale)
+
+data_scaled.adj <- admin_vot.adj %>% 
+  select(year, fips, countyname
+         , statefp
+         , state, felony_str_mod, same_day_reg
+         , pct_purged
+          , high_density
+         , website # info_standard, info_other, info_ssn, info_address,
+         , all_mail
+         , early_inperson
+         , join_abs_list
+         , strict_id
+         , photo_id
+         , counts_pb
+         , hava_spend
+         , cost_100_less
+         , rep_control
+         , dem_control
+         , pct_highschool
+         , pct_unemployed
+         , ln_median_income
+         , median_age
+         , pct_female
+         , pct_black
+         , pct_latino
+         , vote_margin 
+         , x_reg_rate
+         , x_out_rate
+         , x_bal_rate
+         , reg_rate
+         , out_rate
+         , bal_rate
+         , vot_rate) %>% 
+  mutate_at(c("pct_purged"
+              , "hava_spend"
+              , "pct_highschool"
+              , "pct_unemployed"
+              , "ln_median_income"
+              , "pct_female"
+              , "median_age"
+              , "pct_black"
+              , "pct_latino"
+              , "vote_margin"
+              , "x_reg_rate"
+              , "x_out_rate"
+              , "x_bal_rate"), scale)
+```
+
+# build model formulas
+
+```{r}
+rhs <- data_scaled %>% 
+  select(-c(year, fips, countyname, statefp, state, vote_margin, x_reg_rate, x_out_rate, 
+            x_bal_rate, reg_rate, out_rate, bal_rate, vot_rate)) %>% 
+  names()
+
+#interactions <- c("felony_str_mod*pct_black","high_density*pct_black")
+interactions <- c("felony_str_mod*pct_black")
+random_intercepts <- c("(1|statefp/fips)", "(1|year)")
+add_terms <- paste(c(interactions, random_intercepts), collapse = " + ")
+outcomes <- list(NULL, "x_reg_rate", 
+                 "x_reg_rate + x_out_rate", 
+                 "x_reg_rate + x_out_rate + x_bal_rate")
+
+models <- c("reg_rate", "out_rate", "bal_rate", "vot_rate") %>% 
+  lapply(function(y) formula(paste(y, "~", paste(rhs, collapse = " + ")))) %>% 
+  lapply(mod=., seq(1:4), function(x, mod) update(formula(mod[[x]]), 
+                                                  paste("~ . + ", outcomes[x], 
+                                                        " + ", add_terms))) %>% 
+  lapply(function(model) lmer(model, data = data_scaled))
+
+ranef_sd <- models %>% 
+  lapply(function(model) VarCorr(model)) %>% 
+  lapply(function(r) as.data.frame(r)) 
+
+depvars <- c("Registration", "Turnout", "Balloting", "Counting")
+indvars <- c("Constant", "Felon Voting", "Felon Voting*\\% Black", 
+             "Same Day Registration", "Pct Voters Purged", "Registration Website", 
+             # "Website: Name, DOB, DL", "Website: Other", 
+             # "Website: SSN", "Website: Address", 
+             "All-Mail Voting", "Early Voting", "Absentee List Voting", 
+             "Strict ID Law", "Photo ID Required", 
+             "Provisional Balloting", 
+             "High Poll Density", "HAVA Spending", "Low Cost Voter Data", 
+             "Republican Majority", "Democratic Majority", "\\% Highschool Grad", 
+             "\\% Unemployed", "Ln Median Income", "Median Age", "\\% Women", 
+             "\\% Black", "\\% Latino", 
+              #"High Density*Pct Black",
+             "Registr. Rate", "Turnout Rate", "Ballot Rate")
+estimates <- stargazer(models, align = TRUE, type = "text", out.header = TRUE,
+                       out = 'out/multistage_results.tex', 
+                       title = 'Linear Mixed Effects Regression Results (EAC Data)',
+                       keep.stat = c('n'), dep.var.labels = depvars,
+                       covariate.labels = indvars,
+                       float = TRUE, float.env = "table", header = FALSE,
+                       intercept.top = TRUE, intercept.bottom = FALSE,
+                       model.numbers = FALSE, no.space = TRUE, 
+                       order = c(1, 2, 27, 3:23, 24:26),
+                       dep.var.caption = "Dependent Variable (Rate)",
+                       single.row = TRUE, report = 'vc*', digits = 5,
+                       column.sep.width = '-20pt')
+# build model formulas
+```
+
+```{r}
+rhs.leip <- data_scaled.leip %>% 
+  select(-c(year, fips, countyname, statefp, state, vote_margin, x_reg_rate, 
+            x_out_rate, x_bal_rate, reg_rate, out_rate,
+            bal_rate, vot_rate)) %>% 
+  names()
+
+#interactions <- c("felony_str_mod*pct_black","high_density*pct_black")
+interactions <- c("felony_str_mod*pct_black")
+random_intercepts <- c("(1|statefp/fips)", "(1|year)")
+add_terms <- paste(c(interactions, random_intercepts), collapse = " + ")
+outcomes <- list(NULL, "x_reg_rate", 
+                 "x_reg_rate + x_out_rate", 
+                 "x_reg_rate + x_out_rate + x_bal_rate")
+
+models.leip <- c("reg_rate", "out_rate", "bal_rate", "vot_rate") %>% 
+  lapply(function(y) formula(paste(y, "~", paste(rhs.leip, collapse = " + ")))) %>% 
+  lapply(mod=., seq(1:4), function(x, mod) update(formula(mod[[x]]), 
+                                                  paste("~ . + ", outcomes[x], 
+                                                        " + ", add_terms))) %>% 
+  lapply(function(model) lmer(model, data = data_scaled.leip))
+
+ranef_sd.leip <- models.leip %>% 
+  lapply(function(model) VarCorr(model)) %>% 
+  lapply(function(r) as.data.frame(r)) 
+
+depvars <- c("Registration", "Turnout", "Balloting", "Counting")
+indvars <- c("Constant", "Felon Voting", "Felon Voting*\\% Black", 
+             "Same Day Registration", "Pct Voters Purged", "Registration Website", 
+             # "Website: Name, DOB, DL", "Website: Other", 
+             # "Website: SSN", "Website: Address", 
+             "All-Mail Voting", "Early Voting", "Absentee List Voting", 
+             "Strict ID Law", "Photo ID Required", 
+             "Provisional Balloting", 
+             "High Poll Density", "HAVA Spending", "Low Cost Voter Data", 
+             "Republican Majority", "Democratic Majority", "\\% Highschool Grad", 
+             "\\% Unemployed", "Ln Median Income", "Median Age", "\\% Women", 
+             "\\% Black", "\\% Latino", 
+              #"High Density*Pct Black",
+             "Registr. Rate", "Turnout Rate", "Ballot Rate")
+estimates.leip <- stargazer(models.leip, align = TRUE, type = "text", out.header = TRUE,
+                       out = 'out/multistage_results_leip.tex', 
+                       title = 'Linear Mixed Effects Regression Results (Leip Data)',
+                       keep.stat = c('n'), dep.var.labels = depvars,
+                       covariate.labels = indvars,
+                       float = TRUE, float.env = "table", header = FALSE,
+                       intercept.top = TRUE, intercept.bottom = FALSE,
+                       model.numbers = FALSE, no.space = TRUE, 
+                       order = c(1, 2, 27, 3:23, 24:26),
+                       dep.var.caption = "Dependent Variable (Rate)",
+                       single.row = TRUE, report = 'vc*', digits = 5,
+                       column.sep.width = '-20pt')
+```
+
+```{r}
+rhs.adj <- data_scaled.adj %>% 
+  select(-c(year, fips, countyname, statefp, state, vote_margin, x_reg_rate, 
+            x_out_rate, x_bal_rate, reg_rate, out_rate,
+            bal_rate, vot_rate)) %>% 
+  names()
+
+#interactions <- c("felony_str_mod*pct_black","high_density*pct_black")
+interactions <- c("felony_str_mod*pct_black")
+random_intercepts <- c("(1|statefp/fips)", "(1|year)")
+add_terms <- paste(c(interactions, random_intercepts), collapse = " + ")
+outcomes <- list(NULL, "x_reg_rate", 
+                 "x_reg_rate + x_out_rate", 
+                 "x_reg_rate + x_out_rate + x_bal_rate")
+
+models.adj <- c("reg_rate", "out_rate", "bal_rate", "vot_rate") %>% 
+  lapply(function(y) formula(paste(y, "~", paste(rhs.adj, collapse = " + ")))) %>% 
+  lapply(mod=., seq(1:4), function(x, mod) update(formula(mod[[x]]), 
+                                                  paste("~ . + ", outcomes[x], 
+                                                        " + ", add_terms))) %>% 
+  lapply(function(model) lmer(model, data = data_scaled.adj))
+
+ranef_sd.adj <- models.adj %>% 
+  lapply(function(model) VarCorr(model)) %>% 
+  lapply(function(r) as.data.frame(r)) 
+
+depvars <- c("Registration", "Turnout", "Balloting", "Counting")
+indvars <- c("Constant", "Felon Voting", "Felon Voting*\\% Black", 
+             "Same Day Registration", "Pct Voters Purged", "Registration Website", 
+             # "Website: Name, DOB, DL", "Website: Other", 
+             # "Website: SSN", "Website: Address", 
+             "All-Mail Voting", "Early Voting", "Absentee List Voting", 
+             "Strict ID Law", "Photo ID Required", 
+             "Provisional Balloting", 
+             "High Poll Density", "HAVA Spending", "Low Cost Voter Data", 
+             "Republican Majority", "Democratic Majority", "\\% Highschool Grad", 
+             "\\% Unemployed", "Ln Median Income", "Median Age", "\\% Women", 
+             "\\% Black", "\\% Latino", 
+              #"High Density*Pct Black",
+             "Registr. Rate", "Turnout Rate", "Ballot Rate")
+estimates.adj <- stargazer(models.adj, align = TRUE, type = "text", out.header = TRUE,
+                       out = 'out/multistage_results_adj.tex', 
+                       title = 'Linear Mixed Effects Regression Results (CPS-Adjusted Leip Data)',
+                       keep.stat = c('n'), dep.var.labels = depvars,
+                       covariate.labels = indvars,
+                       float = TRUE, float.env = "table", header = FALSE,
+                       intercept.top = TRUE, intercept.bottom = FALSE,
+                       model.numbers = FALSE, no.space = TRUE, 
+                       order = c(1, 2, 27, 3:23, 24:26),
+                       dep.var.caption = "Dependent Variable (Rate)",
+                       single.row = TRUE, report = 'vc*', digits = 5,
+                       column.sep.width = '-20pt')
+```
+
